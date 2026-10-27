@@ -1,0 +1,151 @@
+============================================================
+CONTEXTO / BITACORA - PORTAL DE EXPEDIENTES RH (LimpiaLeon)
+Carpeta: C:\Proyectos-GAS\PROYECTO-URGENTE
+Archivos: Codigo.js, Index.html, appsscript.json, .clasp.json, package.json
+Creada: 27/10/2026 por AGENTE 1
+============================================================
+
+REGLA DE ESTE ARCHIVO
+- Es la memoria compartida entre agentes de ESTE proyecto. No borrar registros anteriores: agregar al final.
+- El codigo es la fuente de verdad. Si algo de aqui contradice al codigo, manda el codigo.
+- Proyecto hermano: C:\Proyectos-GAS\PANEL-RH (Panel RH), con su propia bitacora CONTEXTO-PANEL-RH.txt.
+  Los dos proyectos comparten el mismo libro de Google Sheets (BD 1ZEy...). Un cambio en uno puede afectar al otro.
+
+------------------------------------------------------------
+RESUMEN DEL PROYECTO (leido el 27/10/2026)
+------------------------------------------------------------
+Portal web de Apps Script (acceso con numero de empleado + PIN de 4 numeros) donde el prestador de servicio actualiza su expediente.
+
+Que hace:
+- Acceso: iniciarAcceso -> verificarDocumento (ultimos 4 de clave de elector / RFC / CURP, solo la primera vez o si olvido el PIN) -> crearPin / entrar. Escala de esperas por errores (5 min, 1 h, 8 h, 24 h) y bloqueo al error 9. PIN cifrado en un libro APARTE (ACCESOS), con la clave PIMIENTA_PIN en Propiedades del script.
+- Lee a la persona en BD_MAESTRA_RH (solo lectura) y le manda al navegador solo los campos que puede ver.
+- Envio en 3 llamadas: iniciarEnvio (guarda 4 pestanas + CONTROL EXP, estado EN CAPTURA) -> subirDocumento (una llamada por foto, a Drive) -> finalizarEnvio (revisa fotos, estado PENDIENTE, limpia PDF_EXPEDIENTE y DOCS_RH, genera el PDF).
+- Pestanas que escribe: CONTROL EXP, DATOS GENERALES, DOMICILIO Y DATOS FISCALES, SALUD, EMERGENCIA Y LICENCIA, FAMILIARES. Folio = EXP-<ID>. Una sola fila por empleado: cada envio SOBREESCRIBE la fila (no hay historial de envios).
+- Fotos en Drive: EXPEDIENTES RH / DEPENDENCIA / ID / (FOTO DE PERFIL, INE EMPLEADO, LICENCIA, COMPROBANTE DOMICILIO). PDF en la subcarpeta PDF EXPEDIENTE; solo se conserva el mas reciente (los demas van a la papelera).
+- Estados (CONTROL EXP.ESTADO): EN CAPTURA -> PENDIENTE (lo pone el portal) -> COMPLETADO / INCOMPLETO (lo pone RH). INCOMPLETO deja que el empleado vuelva a entrar; su nuevo envio regresa a PENDIENTE.
+- Menu "LimpiaLeon RH" en la hoja: asignar PIN, desbloquear, reactivar, cerrar sesiones, ver cuenta, generar PDF de expedientes que faltan.
+- Modo mantenimiento: activarMantenimiento() / desactivarMantenimiento() (propiedad MODO_MANTENIMIENTO).
+- Disparador cada 5 min pdfsPendientesAutomatico (se instala con instalarPdfAutomatico): SOLO regenera PDF de filas con DOCS_RH lleno y PDF_EXPEDIENTE vacio (caso: RH subio un documento desde el Panel).
+- Usuario de prueba CONFIG.USUARIO_PRUEBA = 'X0000' (entra sin PIN, no guarda nada). Sigue ACTIVO.
+
+Como se conecta con el Panel RH:
+- El Panel LEE las 4 pestanas y CONTROL EXP (cache 45 s) y escribe en CONTROL EXP: ESTADO, REVISOR, FECHA_REVISION, OBSERVACIONES, CORREGIR (panelRevisarExpediente) y, al subir un documento por el empleado, DOCS_RH / PDF_EXPEDIENTE vacio / INE_NO_ENTREGADA / ESTADO PENDIENTE (panelSubirDocumentoExpediente). Tambien edita las 4 pestanas (editar datos).
+- Columnas "contrato" entre los dos: CORREGIR, OBSERVACIONES, INE_NO_ENTREGADA, DOCS_RH, PDF_EXPEDIENTE, ESTADO.
+- CORREGIR: texto con las opciones separadas por coma. El portal lo interpreta con corregirDe_ + el mapa CORREGIR (nombres simplificados, p. ej. "Comprobante de domicilio" -> COMPROBANTE). OBSERVACIONES es solo texto que se le muestra a la persona; no marca nada. El Panel toma las opciones de CORREGIR de la validacion de datos de la celda de la FILA 2 de CONTROL EXP; si esa celda no es lista usa una lista por defecto SIN "Comprobante de domicilio" y descarta en silencio lo que no este en la lista.
+
+------------------------------------------------------------
+REGISTRO 27/10/2026 ~17:30
+AGENTE 1
+------------------------------------------------------------
+
+PEDIDO DEL USUARIO:
+1) Leer este proyecto (urgente) y el Panel RH y explicar como trabajan en conjunto.
+2) Los INCOMPLETOS marcados desde el Panel salian con el motivo en texto plano y a los empleados no se les marcaba que la mayoria eran por comprobante (el usuario ya convirtio la celda CORREGIR a lista).
+3) Caso A0063 (ROSA ISELA ORTIZ GARCIA, FIDEFIFA): dice que subio su comprobante y vio su folio, pero su expediente sigue INCOMPLETO y no se genero PDF nuevo. El usuario teme que se repita.
+4) Anotar todo en la bitacora de este proyecto.
+
+LO QUE HICE:
+- Solo lectura de codigo (Codigo.js completo de este proyecto, Index.html casi completo, y Codigo.js del Panel en las partes de expedientes). NO modifique codigo. Cree este archivo.
+
+DATOS DEL CASO A0063 (fila de CONTROL EXP que paso el usuario):
+- FECHA_ENVIO 26/10/2026 10:06; respuestas del comprobante SI / SI; INE_NO_ENTREGADA = "EMPLEADO, COMPROBANTE"; ESTADO INCOMPLETO; REVISOR y FECHA_REVISION vacios; CORREGIR = "INE, COMPROBANTE DE DOMICILIO"; OBSERVACIONES = "FAVOR DE SUBIR SU COMPROBANTE DE DOMICILIO E INE POR AMBOS LADOS CON BUENA CALIDAD"; con link a un PDF.
+- Fotos en Drive con fecha del 28/sep/2026 (primer envio). Ninguna foto nueva del 26/oct. Primer envio segun el usuario: 28/sep.
+- El usuario no tiene registro de sus demas envios (CONTROL EXP guarda una sola fila; cada envio la sobreescribe).
+
+HALLAZGOS:
+1) El reenvio del 26/10 SI se registro en el servidor (iniciarEnvio reescribe FECHA_ENVIO, INE_NO_ENTREGADA y las respuestas del comprobante en cada envio). (Un mensaje anterior de este mismo dia decia lo contrario; fue un error y se corrigio.)
+2) Causa probable de que no se guardaran fotos (Index.html):
+   - iniciarSesion carga S.sinIne desde INE_NO_ENTREGADA del envio anterior (casilla "No lo tengo a la mano" ya marcada).
+   - renderIneEmpleado oculta el campo de subir el comprobante si sinIne tiene COMPROBANTE, y fotosIne oculta los campos de INE si sinIne tiene EMPLEADO: queda solo la casilla marcada.
+   - Solo se quita COMPROBANTE de sinIne si CORREGIR trae COMPROBANTE (S.corregir.has('COMPROBANTE')). Para INE (EMPLEADO) NO se quita nunca, aunque CORREGIR traiga INE.
+   - enviar() solo sube fotos con !S.sinIne.has(d.quien): si la casilla sigue marcada no sube nada, pero el envio termina bien y muestra el folio.
+   - Con el motivo en texto plano (CORREGIR vacio) la persona entra con todo marcado "no tengo", no ve donde subir, envia y recibe folio de exito. Esto explica la fila de A0063.
+3) El INCOMPLETO actual de A0063 parece una edicion manual en la hoja DESPUES del envio (el boton del Panel siempre llena REVISOR y FECHA_REVISION). Falta confirmar con el historial de ediciones de la celda ESTADO.
+4) Hueco de PDF: generarPdfExpediente_ se llama dentro de finalizarEnvio y su error se traga (console.log). El disparador de 5 min NO lo rescata (solo atiende DOCS_RH). Un envio normal sin PDF solo se arregla con el menu "Generar PDF de expedientes que faltan". Falta confirmar si el PDF de A0063 es del 26/oct (el nombre trae 2026-10-26_1006 y debe decir "Documentos que no tenia a la mano: EMPLEADO, COMPROBANTE DE DOMICILIO") o del 28/sep.
+5) Panel: si la celda CORREGIR (fila 2) pierde su validacion de lista, panelOpciones_ cae a una lista sin "Comprobante de domicilio" y panelRevisarExpediente descarta en silencio lo no valido: solo queda texto plano. Ese fue el origen del punto 2 del pedido.
+
+ARCHIVOS MODIFICADOS:
+- CONTEXTO-PORTAL-EXPEDIENTES.txt (NUEVO, este archivo).
+- Tambien se anoto el diagnostico en C:\Proyectos-GAS\PANEL-RH\CONTEXTO-PANEL-RH.txt (dos registros del 27/10).
+- Codigo.js e Index.html de este proyecto NO se tocaron.
+
+PRUEBAS:
+- Ninguna (solo lectura). No se vieron las hojas, el PDF de A0063 ni el historial de ediciones.
+
+RESULTADO:
+- Explicacion entregada al usuario. Causa probable identificada; falta confirmar con el PDF y el historial de la hoja.
+
+PENDIENTES (ninguno hecho; esperan OK del usuario):
+- Portal (Index.html, iniciarSesion): en estado INCOMPLETO quitar de sinIne EMPLEADO y COMPROBANTE cuando falte la foto en Drive o cuando RH marco INE / COMPROBANTE en CORREGIR (hoy solo COMPROBANTE).
+- Portal (Codigo.js): que pdfsPendientesAutomatico regenere el PDF de cualquier expediente no EN CAPTURA con PDF_EXPEDIENTE vacio, y que los errores de PDF queden visibles (hoja o bitacora), no solo console.log.
+- Panel RH: avisar cuando CORREGIR queda vacio al marcar INCOMPLETO (hoy se guarda solo texto sin avisar).
+- Opcional: pestana ENVIOS_LOG con una linea por inicio y por cierre de envio (hoy no queda historial).
+- Verificar que la fila 2 de la columna CORREGIR en CONTROL EXP tenga validacion de lista e incluya exactamente "Comprobante de domicilio".
+- Verificar que el despliegue web del portal este en la version con los cambios de esta carpeta (no se pudo ver desde aqui).
+- Manual del usuario, mientras tanto: en cada fila INCOMPLETA borrar de INE_NO_ENTREGADA los valores EMPLEADO / COMPROBANTE que RH pidio volver a subir; y revisar en CONTROL EXP las filas PENDIENTE cuyo INE_NO_ENTREGADA contenga COMPROBANTE (pueden haber enviado sin subir nada). Correr "Generar PDF de expedientes que faltan" en el menu.
+
+RIESGOS / OBSERVACIONES:
+- Otros empleados marcados INCOMPLETO por comprobante antes de arreglar la lista pueden haber reenviado igual sin subir fotos.
+- El portal no guarda historial de envios: solo la fila actual, las fechas de los archivos de Drive, la hoja BITACORA del libro de accesos (entradas) y el historial de ediciones de Google Sheets.
+- USUARIO_PRUEBA 'X0000' sigue activo; ACCESOS_ID esta vacio en CONFIG y depende de la propiedad del script; SPREADSHEET_ID y CARPETA_RAIZ_ID estan escritos en el codigo.
+- configurarAccesos() valida al administrador distinto a las demas funciones de RH (no usa verificarAccesoAdministrador_).
+- El repo git de esta carpeta no tiene commits (sin historial). No hay .claspignore: los .txt no se suben con clasp push, pero conviene confirmarlo.
+
+------------------------------------------------------------
+REGISTRO 27/10/2026 (lectura de contexto, sin cambios de codigo)
+AGENTE 2
+------------------------------------------------------------
+PEDIDO DEL USUARIO: "Lee Panel GAS / Proyecto Urgente": ponerme al dia con los dos proyectos.
+LO QUE HICE: lei esta bitacora y la del Panel RH (CONTEXTO-PANEL-RH.txt). NO lei Codigo.js ni Index.html; NO modifique codigo.
+ARCHIVOS MODIFICADOS: solo este registro (y uno equivalente en la bitacora del Panel).
+PRUEBAS: ninguna (solo lectura).
+RESULTADO: contexto al dia con el ultimo registro del Agente 1 (27/10 ~17:30).
+PENDIENTES: los que dejo el Agente 1, todos esperando OK del usuario.
+RIESGOS/OBSERVACIONES: ninguno nuevo.
+
+------------------------------------------------------------
+REGISTRO 27/10/2026 (cambios por los INCOMPLETOS / caso A0063)
+AGENTE 2
+------------------------------------------------------------
+
+PEDIDO DEL USUARIO:
+Hacer todos los pendientes que dejo el Agente 1 (portal + Panel) "sin cagarla".
+
+LO QUE HICE:
+1) Index.html, iniciarSesion (portal): en una CORRECCION (estado INCOMPLETO), lo que RH pidio volver a subir ya no llega marcado "No lo tengo a la mano".
+   - Si CORREGIR trae INE o "Licencia e INE" (LICENCIA): se quita EMPLEADO de sinIne (aparecen los campos de la INE).
+   - Si CORREGIR trae COMPROBANTE: ya se quitaba COMPROBANTE (sin cambio).
+   - Si CORREGIR llega vacio (motivo solo en texto): se quitan EMPLEADO y COMPROBANTE de sinIne.
+   - La persona puede volver a marcar la casilla si de verdad no lo tiene. No se tocaron HIJO/ADULTO, el modo CAPTURA ni el envio.
+2) Codigo.js, pdfsPendientesAutomatico (portal): ahora tambien genera el PDF de expedientes PENDIENTE o INCOMPLETO con PDF_EXPEDIENTE vacio (antes solo los que tenian DOCS_RH).
+   Salvaguardas: salta envios de los ultimos 3 min (finalizarEnvio puede estar haciendo el suyo); primero los mas recientes; si un PDF falla no se reintenta ese ID por 1 hora (cache pdf_fallo_<ID>);
+   los COMPLETADO sin PDF NO se tocan aqui (siguen con el menu "Generar PDF de expedientes que faltan"); se mantiene el limite de 240 s y el candado de corrida.
+3) Codigo.js (portal): funcion nueva registrarErrorPdf_(id, origen, err) -> escribe evento PDF_ERROR en la hoja BITACORA del libro de ACCESOS (nunca lanza error). Se llama desde finalizarEnvio
+   y desde el disparador automatico. El Panel solo ESCRIBE en esa bitacora, no la lee, asi que el evento nuevo no le afecta.
+4) Panel RH: panelRevisarExpediente avisa si lo marcado en CORREGIR no esta en la lista (ver CONTEXTO-PANEL-RH.txt).
+
+ARCHIVOS MODIFICADOS:
+- PROYECTO-URGENTE: Index.html (iniciarSesion), Codigo.js (finalizarEnvio una linea, pdfsPendientesAutomatico, registrarErrorPdf_ nueva), CONTEXTO-PORTAL-EXPEDIENTES.txt.
+- PANEL-RH: Codigo.js (panelRevisarExpediente), CONTEXTO-PANEL-RH.txt.
+
+PRUEBAS: node --check de Codigo.js del portal, Codigo.js del Panel y del bloque <script> de Index.html del portal: OK. NO ejecute nada en Apps Script, no probe en pantalla, NO publique (clasp push no esta a mi alcance).
+
+RESULTADO: listo en local. Falta publicar los DOS proyectos y probar.
+
+PENDIENTES:
+- Publicar portal (clasp push + nueva version del despliegue web: el portal es web app, sin nueva version los empleados siguen con el codigo viejo) y Panel.
+- Confirmar que el disparador pdfsPendientesAutomatico este instalado (si no, correr instalarPdfAutomatico() una vez desde el editor); sin disparador el cambio 2 no corre solo.
+- Probar con un usuario en INCOMPLETO con CORREGIR = INE, COMPROBANTE DE DOMICILIO: deben verse los campos de foto de INE y comprobante sin la casilla marcada. Probar tambien con CORREGIR vacio.
+- No se hizo ENVIOS_LOG (opcional, esperaba OK del usuario).
+- Manual del usuario: revisar filas PENDIENTE con COMPROBANTE o EMPLEADO en INE_NO_ENTREGADA (enviaron sin subir nada). A0063 sigue INCOMPLETO con CORREGIR = INE, COMPROBANTE DE DOMICILIO: con el cambio 1 publicado ya no necesita edicion manual (al entrar vera los campos de foto); avisarle que vuelva a entrar y reenvie.
+  Correr el menu "Generar PDF de expedientes que faltan" para los COMPLETADO sin PDF.
+
+RIESGOS/OBSERVACIONES:
+- En INCOMPLETO con CORREGIR vacio la persona ve las casillas desmarcadas aunque de verdad no tenga el documento: tiene que volver a marcarla (antes llegaba marcada). Es lo buscado, pero puede causar una pregunta.
+- La causa de A0063 sigue sin confirmarse al 100% con la hoja (sin historial de ediciones ni PDF a la vista); el cambio 1 cierra el camino que explica su fila.
+- El PDF de un INCOMPLETO sin PDF se hace con lo que haya hoy en las pestanas (ultimo envio).
+- El edit por FileSystem deja los archivos en LF; correr node crlf.cjs en el Panel antes de commit. El portal no tiene crlf.cjs ni commits.
+
+============================================================
+
+============================================================

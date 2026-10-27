@@ -1,0 +1,21 @@
+{
+  "name": "proyecto-urgente",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Código.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "estado": "clasp.cmd status",
+    "descargar": "clasp.cmd pull",
+    "probar": "clasp.cmd push",
+    "despliegues": "clasp.cmd deployments",
+    "publicar": "clasp.cmd push && clasp.cmd version && clasp.cmd update-deployment AKfycbyldf3pAeRvyvvqIh7nCmX15Lv3Z2jJVyDVDnyjQXHhfEvb_iz7r2PVcCEK8ZHKpfZB"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  }
+}
